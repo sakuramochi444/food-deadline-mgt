@@ -1,0 +1,250 @@
+:root {
+  --bg-color: #fafaf9;
+  --text-primary: #444b44;
+  --text-secondary: #828c82;
+  --border-color: #e5e8e5;
+  --card-bg: #ffffff;
+  --accent-color: #8fa68f;
+  --accent-hover: #7a8e7a;
+  --accent-soft: #f1f3f1;
+  --soon-color: #bfa38a;
+  --soon-soft: #f9f6f2;
+  --expired-color: #b98a8a;
+  --expired-soft: #f9f2f2;
+  --consumed-bg: #f5f6f5;
+  --shadow-subtle: 0 4px 12px rgba(0, 0, 0, 0.03);
+  --btn-radius: 10px;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+  position: relative;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  line-height: 1.7;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.2rem;
+}
+
+/* --- Header Layout (True Center Title) --- */
+header {
+  margin-bottom: 2.5rem;
+}
+
+.header-top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr; /* 左右を1fr、中央をautoに */
+  align-items: center;
+  min-height: 60px;
+}
+
+.header-spacer { /* 左側の空白用 */
+  display: block;
+}
+
+header h1 {
+  font-size: 1.8rem;
+  font-weight: 300;
+  color: var(--accent-color);
+  letter-spacing: 0.4rem;
+  margin: 0;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.header-actions {
+  display: flex;
+  justify-content: flex-end; /* 右側に寄せる */
+  gap: 0.75rem;
+}
+
+.subtitle {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  letter-spacing: 0.2rem;
+  text-align: center;
+  margin-top: 0.4rem;
+}
+
+/* --- Controls Layout (Left Aligned) --- */
+.list-controls {
+  padding: 1rem 0;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start; /* 左揃え */
+  gap: 1rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.filter-search {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: none; /* 伸びないように */
+}
+
+.search-input {
+  width: 220px; /* 適切なサイズに固定 */
+}
+
+.filter-select {
+  width: 140px;
+}
+
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: none;
+}
+
+.sort-btn {
+  height: 32px;
+  padding: 0 0.8rem;
+  border-radius: 20px;
+  background: white;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.sort-btn.active {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+}
+
+.clear-all-btn {
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  padding: 0.5rem;
+  opacity: 0.6;
+  text-decoration: underline;
+}
+
+/* --- Common UI Refinements --- */
+button {
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+  border: none;
+  outline: none;
+}
+
+button:active { transform: scale(0.97); }
+
+.icon-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
+
+.icon-btn:hover {
+  opacity: 1;
+  background: var(--accent-soft);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+input, select {
+  height: 38px;
+  border-radius: var(--btn-radius);
+  border: 1px solid var(--border-color);
+  padding: 0 0.75rem;
+  font-size: 0.9rem;
+  background: #fff;
+}
+
+input:focus, select:focus {
+  border-color: var(--accent-color);
+}
+
+/* Form Section */
+.form-section {
+  padding: 1.5rem;
+  background: white;
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-subtle);
+  margin-bottom: 2.5rem;
+}
+
+form .input-group {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.add-btn {
+  background: var(--accent-color);
+  color: white;
+  border-radius: var(--btn-radius);
+  height: 42px;
+  padding: 0 1.5rem;
+  font-weight: 600;
+}
+
+/* Grid & Items */
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.25rem;
+}
+
+.item-card {
+  border-radius: 16px;
+  padding: 1.25rem;
+  background: white;
+  border: 1px solid var(--border-color);
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: var(--shadow-subtle);
+}
+
+.item-info h3 { margin: 0.4rem 0; font-size: 1.15rem; font-weight: 600; }
+
+.item-actions button { flex: 1; height: 36px; border-radius: var(--btn-radius); font-weight: 600; }
+
+.check-btn { background: var(--accent-soft); color: var(--accent-color); }
+.edit-btn { background: #f8faf8; color: var(--text-secondary); border: 1px solid #eef0ee !important; }
+.delete-btn { background: transparent; color: #d1d5d1; }
+
+.status-label { font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 6px; }
+.status-label.safe { color: var(--accent-color); background: var(--accent-soft); }
+.status-label.soon { color: #8a7a6b; background: var(--soon-soft); }
+.status-label.expired { color: #8a6b6b; background: var(--expired-soft); }
+
+@media (max-width: 768px) {
+  .header-top { 
+    grid-template-columns: 1fr auto 1fr; /* スマホでも3列を維持 */
+  }
+  .header-spacer { display: block; } /* スペーサーを表示したままにする */
+  header h1 { 
+    font-size: 1.6rem;
+    text-align: center; /* 中央揃えを維持 */
+  }
+  
+  .list-controls { flex-direction: column; align-items: flex-start; gap: 1rem; }
+  .filter-search { width: 100%; flex-wrap: wrap; }
+  .search-input, .filter-select { width: 100%; }
+}

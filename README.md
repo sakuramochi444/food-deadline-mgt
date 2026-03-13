@@ -1,73 +1,52 @@
-# React + TypeScript + Vite
+# ストックル (Stockle) 🌿
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**「貯める、回す、使う」を、もっと心地よく。**
 
-Currently, two official plugins are available:
+ストックルは、日々の食材管理をストレスなく、そしてスマートに行うための賞味期限管理アプリです。
+おとなしめで上品なセージグリーンを基調としたデザインで、キッチンでの時間を少しだけ豊かにします。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## ✨ 特徴
 
-## React Compiler
+- **タブ分けによる整理**: 「在庫リスト」と「AIレシピ提案」をタブで分離。在庫が増えてもAI機能に素早くアクセスできます。
+- **直感的なドラッグ＆ドロップ**: 在庫リストを自由に並び替えて、自分だけの優先順位で管理（PC/スマホ対応）。
+- **インテリジェントなバリデーション**: 必須項目が入力されるまで「追加」ボタンが無効化され、ミスを未然に防ぎます。
+- **ひと目でわかる期限管理**: 期限間近はアンバーゴールド、期限切れはローズカラーのグラデーションで優しく強調。
+- **AI レシピ提案**: Google Gemini 1.5 Flash を搭載。在庫食材から最適なメニューを提案します。
+- **防災備蓄管理**: 通常の食材に加え、「防災備蓄」カテゴリで備えの品も一括管理。
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+## 🎨 デザインコンセプト
 
-## Expanding the ESLint configuration
+「おとなしめで上品な雰囲気」と「使い勝手」の両立。
+- **セージグリーン**: 安心感と清潔感を与えるメインカラー。
+- **モダンなボタン設計**: 押しやすさを追求したサイズ（44px）と、心地よいクリックフィードバック。
+- **レスポンシブデザイン**: スマホでのズーム防止や横揺れ防止を徹底し、アプリのような操作感を実現。
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 🛠 テクノロジー
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- **Frontend**: React (TypeScript) / Vite
+- **UI/UX**: Vanilla CSS (Custom Design) / @dnd-kit (Drag & Drop)
+- **Backend**: Express (Node.js) / Vercel Serverless Functions
+- **Database**: Prisma (SQLite / PostgreSQL)
+- **AI**: Google Gemini 1.5 Flash (Direct REST API v1)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 🚀 はじめかた
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 1. 依存関係のインストール
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 2. データベースのセットアップ
+`.env` ファイルに `DATABASE_URL` を設定後、以下を実行。
+```bash
+npx prisma generate
+npx prisma db push
 ```
+
+### 3. 開発サーバーの起動
+```bash
+npm run dev
+```
+
+---
+Developed with ❤️ for better food management.

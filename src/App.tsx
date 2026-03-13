@@ -29,6 +29,7 @@ interface FoodItem {
 
 const CATEGORIES = ['野菜・果物', '肉・魚', '卵・乳製品', '冷凍食品', '調味料', '飲料', '防災備蓄', 'その他'];
 type SortOption = 'expirationDate' | 'name' | 'category' | 'createdAt' | 'manual';
+type TabType = 'list' | 'ai';
 
 function SortableItem(props: { id: string; children: React.ReactNode }) {
   const {
@@ -62,6 +63,7 @@ function App() {
   const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [showSettings, setShowSettings] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>('list');
   const [formData, setFormData] = useState({
     name: '',
     expirationDate: '',
@@ -81,6 +83,8 @@ function App() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+
+  const isFormValid = formData.name.trim() !== '' && formData.expirationDate !== '';
 
   const saveApiKey = (key: string) => {
     const cleanKey = key.trim().replace(/[\x00-\x1F\x7F-\x9F\s]/g, '');
@@ -111,7 +115,7 @@ function App() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.expirationDate) return;
+    if (!isFormValid) return;
     try {
       const response = await fetch('/api/food-items', {
         method: 'POST',
@@ -251,7 +255,6 @@ function App() {
       };
     };
 
-    // 1. Direct Browser Call
     if (apiKey && apiKey.length > 20) {
       const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       const result = await tryFetch(url, {
@@ -263,14 +266,13 @@ function App() {
         setRecipeSuggestion(result.text);
         setAiLoading(false);
         return;
-      } else if (result.status !== 400) { // API Key 無効以外のエラーならフォールバックせず報告
+      } else if (result.status !== 400) {
         setRecipeSuggestion(`【AIエラー】${result.status}: ${result.message}\n(ブラウザから直接リクエスト中に発生)`);
         setAiLoading(false);
         return;
       }
     }
 
-    // 2. Backend Fallback
     const result = await tryFetch('/api/recipes', { 
       headers: { 'x-api-key': apiKey } 
     });
@@ -357,125 +359,147 @@ function App() {
               value={formData.quantity}
               onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
             />
-            <button type="submit" className="add-btn">在庫に追加</button>
+            <button type="submit" className="add-btn" disabled={!isFormValid}>在庫に追加</button>
           </div>
         </form>
       </section>
 
-      <section className="list-section">
-        <div className="list-controls card">
-          <div className="filter-search">
-            <input 
-              type="text" 
-              placeholder="検索..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="search-input"
-            />
-            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-              <option value="すべて">すべてのカテゴリ</option>
-              {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
-          </div>
-          <div className="sort-controls">
-            <button 
-              className={`sort-btn ${sortBy === 'expirationDate' ? 'active' : ''}`}
-              onClick={() => { setSortBy('expirationDate'); setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); }}
-            >
-              期限順
-            </button>
-            <button 
-              className={`sort-btn ${sortBy === 'manual' ? 'active' : ''}`}
-              onClick={() => setSortBy('manual')}
-            >
-              自由
-            </button>
-            <button className="clear-all-btn" onClick={clearConsumed}>消費済を削除</button>
-          </div>
-        </div>
+      <nav className="tab-nav">
+        <button 
+          className={`tab-btn ${activeTab === 'list' ? 'active' : ''}`} 
+          onClick={() => setActiveTab('list')}
+        >
+          在庫リスト
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 'ai' ? 'active' : ''}`} 
+          onClick={() => setActiveTab('ai')}
+        >
+          AIレシピ提案
+        </button>
+      </nav>
 
-        <div className="list-header">
-          <h2>在庫一覧 ({filteredAndSortedItems.length}個)</h2>
-        </div>
+      {activeTab === 'list' ? (
+        <section className="list-section">
+          <div className="list-controls card">
+            <div className="filter-search">
+              <input 
+                type="text" 
+                placeholder="検索..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="search-input"
+              />
+              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="filter-select">
+                <option value="すべて">すべてのカテゴリ</option>
+                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+            </div>
+            <div className="sort-controls">
+              <button 
+                className={`sort-btn ${sortBy === 'expirationDate' ? 'active' : ''}`}
+                onClick={() => { setSortBy('expirationDate'); setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); }}
+              >
+                期限順
+              </button>
+              <button 
+                className={`sort-btn ${sortBy === 'manual' ? 'active' : ''}`}
+                onClick={() => setSortBy('manual')}
+              >
+                ドラッグ
+              </button>
+              <button className="clear-all-btn" onClick={clearConsumed}>消費済を一掃</button>
+            </div>
+          </div>
 
-        {loading ? <p className="loading">読み込み中...</p> : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={filteredAndSortedItems.map(i => i.id)} strategy={rectSortingStrategy}>
-              <div className="items-grid">
-                {filteredAndSortedItems.map((item) => {
-                  const status = getStatus(item.expirationDate);
-                  const isEditing = editingId === item.id;
-                  return (
-                    <SortableItem key={item.id} id={item.id}>
-                      <div className={`item-card card ${item.isConsumed ? 'consumed' : ''} status-${status.class}`}>
-                        {isEditing ? (
-                          <div className="edit-form" onClick={(e) => e.stopPropagation()}>
-                            <div className="input-group">
-                              <input type="text" value={editFormData.name} onChange={e => setEditFormData({...editFormData, name: e.target.value})} />
-                              <input type="date" value={editFormData.expirationDate} onChange={e => setEditFormData({...editFormData, expirationDate: e.target.value})} />
+          <div className="list-header">
+            <h2>在庫一覧 ({filteredAndSortedItems.length}個)</h2>
+          </div>
+
+          {loading ? <p className="loading">読み込み中...</p> : (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={filteredAndSortedItems.map(i => i.id)} strategy={rectSortingStrategy}>
+                <div className="items-grid">
+                  {filteredAndSortedItems.map((item) => {
+                    const status = getStatus(item.expirationDate);
+                    const isEditing = editingId === item.id;
+                    return (
+                      <SortableItem key={item.id} id={item.id}>
+                        <div className={`item-card card ${item.isConsumed ? 'consumed' : ''} status-${status.class}`}>
+                          {isEditing ? (
+                            <div className="edit-form" onClick={(e) => e.stopPropagation()}>
+                              <div className="input-group">
+                                <input type="text" value={editFormData.name} onChange={e => setEditFormData({...editFormData, name: e.target.value})} />
+                                <input type="date" value={editFormData.expirationDate} onChange={e => setEditFormData({...editFormData, expirationDate: e.target.value})} />
+                              </div>
+                              <div className="input-group">
+                                <select value={editFormData.category} onChange={e => setEditFormData({...editFormData, category: e.target.value})}>
+                                  {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                                <input type="text" value={editFormData.quantity} onChange={e => setEditFormData({...editFormData, quantity: e.target.value})} />
+                              </div>
+                              <div className="edit-actions">
+                                <button onClick={() => updateItem(item.id, editFormData)} className="save-btn">保存</button>
+                                <button onClick={() => setEditingId(null)} className="cancel-btn">戻る</button>
+                              </div>
                             </div>
-                            <div className="input-group">
-                              <select value={editFormData.category} onChange={e => setEditFormData({...editFormData, category: e.target.value})}>
-                                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                              </select>
-                              <input type="text" value={editFormData.quantity} onChange={e => setEditFormData({...editFormData, quantity: e.target.value})} />
-                            </div>
-                            <div className="edit-actions">
-                              <button onClick={() => updateItem(item.id, editFormData)} className="save-btn">保存</button>
-                              <button onClick={() => setEditingId(null)} className="cancel-btn">戻る</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="item-main">
-                              <div className="item-info">
-                                <span className={`category-tag category-${item.category}`}>{item.category}</span>
-                                <h3>{item.name}</h3>
-                                <div className="qty-control">
-                                  <span className="quantity-display">数量: {item.quantity || '-'}</span>
-                                  {!item.isConsumed && (
-                                    <div className="qty-btns">
-                                      <button onClick={(e) => { e.stopPropagation(); adjustQuantity(item, -1); }}>-</button>
-                                      <button onClick={(e) => { e.stopPropagation(); adjustQuantity(item, 1); }}>+</button>
-                                    </div>
-                                  )}
+                          ) : (
+                            <>
+                              <div className="item-main">
+                                <div className="item-info">
+                                  <span className={`category-tag category-${item.category}`}>{item.category}</span>
+                                  <h3>{item.name}</h3>
+                                  <div className="qty-control">
+                                    <span className="quantity-display">数量: {item.quantity || '-'}</span>
+                                    {!item.isConsumed && (
+                                      <div className="qty-btns">
+                                        <button onClick={(e) => { e.stopPropagation(); adjustQuantity(item, -1); }}>-</button>
+                                        <button onClick={(e) => { e.stopPropagation(); adjustQuantity(item, 1); }}>+</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="item-status">
+                                  <span className={`status-label ${status.class}`}>{item.isConsumed ? '消費済' : status.label}</span>
+                                  <span className="date-label">{new Date(item.expirationDate).toLocaleDateString()}</span>
                                 </div>
                               </div>
-                              <div className="item-status">
-                                <span className={`status-label ${status.class}`}>{item.isConsumed ? '消費済' : status.label}</span>
-                                <span className="date-label">{new Date(item.expirationDate).toLocaleDateString()}</span>
+                              <div className="item-actions">
+                                <button onClick={(e) => { e.stopPropagation(); updateItem(item.id, { isConsumed: !item.isConsumed }); }} className="check-btn">
+                                  {item.isConsumed ? '取り消し' : '消費'}
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="edit-btn">編集</button>
+                                <button onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }} className="delete-btn">削除</button>
                               </div>
-                            </div>
-                            <div className="item-actions">
-                              <button onClick={(e) => { e.stopPropagation(); updateItem(item.id, { isConsumed: !item.isConsumed }); }} className="check-btn">
-                                {item.isConsumed ? '取り消し' : '消費'}
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="edit-btn">編集</button>
-                              <button onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }} className="delete-btn">削除</button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </SortableItem>
-                  );
-                })}
+                            </>
+                          )}
+                        </div>
+                      </SortableItem>
+                    );
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+        </section>
+      ) : (
+        <section className="ai-section">
+          <div className="card ai-card">
+            <div className="ai-header">
+              <h3>AI おすすめレシピ</h3>
+              <p className="ai-intro">現在の在庫をもとに、AIがメニューを提案します。</p>
+              <button className="ai-btn" onClick={fetchRecipes} disabled={aiLoading || items.length === 0}>
+                {aiLoading ? '提案中...' : 'レシピを提案'}
+              </button>
+            </div>
+            {recipeSuggestion && (
+              <div className="ai-content">
+                <p style={{ whiteSpace: 'pre-wrap' }}>{recipeSuggestion}</p>
               </div>
-            </SortableContext>
-          </DndContext>
-        )}
-      </section>
-
-      <section className="ai-section">
-        <div className="card ai-card">
-          <div className="ai-header">
-            <h3>AI おすすめレシピ</h3>
-            <button className="ai-btn" onClick={fetchRecipes} disabled={aiLoading || items.length === 0}>
-              {aiLoading ? '提案中...' : 'レシピを提案'}
-            </button>
+            )}
           </div>
-          {recipeSuggestion && <div className="ai-content"><p style={{ whiteSpace: 'pre-wrap' }}>{recipeSuggestion}</p></div>}
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }

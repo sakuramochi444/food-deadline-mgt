@@ -484,19 +484,16 @@ function App() {
         </section>
       ) : (
         <section className="ai-section">
-          <div className="card ai-card">
+          <div className="card ai-card maintenance">
             <div className="ai-header">
-              <h3>AI おすすめレシピ</h3>
-              <p className="ai-intro">現在の在庫をもとに、AIがメニューを提案します。</p>
-              <button className="ai-btn" onClick={fetchRecipes} disabled={aiLoading || items.length === 0}>
-                {aiLoading ? '提案中...' : 'レシピを提案'}
-              </button>
+              <span className="maintenance-icon">⚠️</span>
+              <h3>AI機能 一時停止のお知らせ</h3>
+              <p className="ai-intro">
+                現在、システム不具合によりAIレシピ提案機能がご利用いただけません。<br />
+                復旧まで今しばらくお待ちください。
+              </p>
             </div>
-            {recipeSuggestion && (
-              <div className="ai-content">
-                <p style={{ whiteSpace: 'pre-wrap' }}>{recipeSuggestion}</p>
-              </div>
-            )}
+            <div className="ai-status-badge">メンテナンス中</div>
           </div>
         </section>
       )}

@@ -429,7 +429,10 @@ function App() {
             <button className="icon-btn" title="設定" onClick={() => setShowSettings(!showSettings)}>⚙️</button>
           </div>
         </div>
-        <h1>ストックル</h1>
+        <div className="logo-container">
+          <img src="/ver2.png" alt="StoCle Logo" className="app-logo" />
+        </div>
+        <h1>StoCle</h1>
         <p className="subtitle">貯める、回す、使う</p>
       </header>
 
@@ -437,7 +440,7 @@ function App() {
         <div className="modal-overlay" onClick={() => setShowGuide(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="guide-header">
-              <h3><span>📖</span>ストックルの使い方</h3>
+              <h3><span>📖</span>StoCleの使い方</h3>
               <button onClick={() => setShowGuide(false)} className="close-icon-btn">✕</button>
             </div>
             
@@ -923,7 +926,10 @@ function AuthView({ onLogin }: { onLogin: (user: User) => void }) {
     <div className="auth-container">
       <div className="auth-card card">
         <header>
-          <h1>ストックル</h1>
+          <div className="logo-container">
+          <img src="/ver2.png" alt="StoCle Logo" className="app-logo" />
+        </div>
+        <h1>StoCle</h1>
           <p className="subtitle">貯める、回す、使う</p>
         </header>
 

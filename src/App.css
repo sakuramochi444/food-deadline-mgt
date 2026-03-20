@@ -78,6 +78,20 @@ header {
   width: 100%;
 }
 
+.logo-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.app-logo {
+  max-width: 120px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.08));
+}
+
 header h1 {
   font-size: clamp(2.4rem, 8vw, 3.4rem);
   font-weight: 800;

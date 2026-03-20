@@ -23,6 +23,17 @@ app.use(express.json());
 
 const router = express.Router();
 
+// Ping Route to keep database active (Supabase)
+router.get('/ping', async (req, res) => {
+  try {
+    const db = getPrisma();
+    await db.user.count();
+    res.json({ status: 'ok', message: 'Database is active', timestamp: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Auth Routes
 router.post('/signup', async (req, res) => {
   const { username, password } = req.body;

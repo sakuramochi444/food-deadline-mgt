@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import inquirer from 'inquirer';
+import { createAIService } from './src/lib/ai.js';
 import { Command } from 'commander';
 
 // --- Prisma Setup ---
@@ -142,29 +143,11 @@ async function getAIRecipe() {
     return;
   }
 
-  console.log('\n🤖 AIがレシピを考えています (Gemini 1.5 Flash v1)...');
+  console.log('\n🤖 AIがレシピを考えています (Gemini 1.5 Flash)...');
   
-  const inventory = items.map(i => i.name).join(', ');
-  const prompt = `あなたは親切な料理アドバイザーです。現在の在庫: ${inventory}。これを使って簡単なレシピを1つ提案してください。静かで落ち着いたトーンで、日本語で回答してください。`;
-
   try {
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || `API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const suggestion = data.candidates?.[0]?.content?.parts?.[0]?.text || 'レシピを生成できませんでした。';
+    const ai = createAIService(apiKey);
+    const suggestion = await ai.generateRecipe(items.map(i => i.name));
 
     console.log('\n--- AIのおすすめレシピ ---');
     console.log(suggestion);

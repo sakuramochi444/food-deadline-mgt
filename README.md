@@ -15,8 +15,21 @@ https://food-deadline-mgt.vercel.app
 - **直感的なドラッグ＆ドロップ**: 在庫リストを自由に並び替えて、自分だけの優先順位で管理（PC/スマホ対応）。
 - **インテリジェントなバリデーション**: 必須項目が入力されるまで「追加」ボタンが無効化され、ミスを未然に防ぎます。
 - **ひと目でわかる期限管理**: 期限間近はアンバーゴールド、期限切れはローズカラーのグラデーションで優しく強調。
-- **AI レシピ提案**: Google Gemini 1.5 Flash を搭載。在庫食材から最適なメニューを提案します。
+- **消費済みを削除**: 使い終わった食材をワンタップで「消費済」へ。リストから一括削除して整理できます。
+- **AI レシピ提案**: Google Gemini 1.5 Flash を搭載（公式SDKを使用）。在庫食材から最適なメニューを提案します。
 - **防災備蓄管理**: 通常の食材に加え、「防災備蓄」カテゴリで備えの品も一括管理。
+
+---
+
+## 🔑 AI 連携のセットアップ
+
+本アプリの「AIレシピ提案」機能を利用するには、**Gemini APIキー**が必要です。
+
+1.  [Google AI Studio](https://aistudio.google.com/app/apikey) にアクセスしてAPIキーを取得してください（無料枠あり）。
+2.  アプリ内の「⚙️ 設定」アイコンをクリックします。
+3.  「Gemini API Key」欄に取得したキーを入力して保存してください。
+
+---
 
 ## 🎨 デザインコンセプト
 
@@ -31,7 +44,7 @@ https://food-deadline-mgt.vercel.app
 - **UI/UX**: Vanilla CSS (Custom Design) / @dnd-kit (Drag & Drop)
 - **Backend**: Express (Node.js) / Vercel Serverless Functions
 - **Database**: Prisma (SQLite / PostgreSQL)
-- **AI**: Google Gemini 1.5 Flash (Direct REST API v1)
+- **AI**: Google Generative AI SDK (Gemini 1.5 Flash)
 
 ## 🚀 はじめかた
 

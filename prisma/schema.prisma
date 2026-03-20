@@ -9,6 +9,17 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id        String     @id @default(uuid())
+  username  String     @unique
+  password  String
+  items     FoodItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@map("users")
+}
+
 model FoodItem {
   id             String   @id @default(uuid())
   name           String
@@ -16,6 +27,8 @@ model FoodItem {
   category       String   @default("その他")
   quantity       String?
   isConsumed     Boolean  @default(false)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

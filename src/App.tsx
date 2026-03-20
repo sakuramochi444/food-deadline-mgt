@@ -18,6 +18,8 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+import ReactMarkdown from 'react-markdown';
+
 interface FoodItem {
   id: string;
   name: string;
@@ -27,9 +29,37 @@ interface FoodItem {
   isConsumed: boolean;
 }
 
+interface AppSettings {
+  notificationDays: number;
+  displayDensity: 'comfortable' | 'compact';
+  themeColor: 'green' | 'orange' | 'blue' | 'berry';
+  hideConsumed: boolean;
+}
+
+interface User {
+  id: string;
+  username: string;
+}
+
 const CATEGORIES = ['野菜・果物', '肉・魚', '卵・乳製品', '冷凍食品', '調味料', '飲料', '防災備蓄', 'その他'];
+const CATEGORY_ICONS: Record<string, string> = {
+  '野菜・果物': '🍎',
+  '肉・魚': '🥩',
+  '卵・乳製品': '🥛',
+  '冷凍食品': '❄️',
+  '調味料': '🧂',
+  '飲料': '☕',
+  '防災備蓄': '🎒',
+  'その他': '📦'
+};
+
 type SortOption = 'expirationDate' | 'name' | 'category' | 'createdAt' | 'manual';
 type TabType = 'list' | 'ai';
+
+interface ChatMessage {
+  role: 'user' | 'model';
+  parts: { text: string }[];
+}
 
 function SortableItem(props: { id: string; children: React.ReactNode }) {
   const {
@@ -56,13 +86,32 @@ function SortableItem(props: { id: string; children: React.ReactNode }) {
 }
 
 function App() {
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('user_info');
+    return saved ? JSON.parse(saved) : null;
+  });
+  
   const [items, setItems] = useState<FoodItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [recipeSuggestion, setRecipeSuggestion] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
+  
+  // Settings State
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const saved = localStorage.getItem('app_settings');
+    return saved ? JSON.parse(saved) : {
+      notificationDays: 3,
+      displayDensity: 'comfortable',
+      themeColor: 'green',
+      hideConsumed: false,
+    };
+  });
+
   const [showSettings, setShowSettings] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('list');
   const [formData, setFormData] = useState({
     name: '',
@@ -86,6 +135,40 @@ function App() {
 
   const isFormValid = formData.name.trim() !== '' && formData.expirationDate !== '';
 
+  useEffect(() => {
+    localStorage.setItem('app_settings', JSON.stringify(settings));
+    document.documentElement.setAttribute('data-theme', settings.themeColor);
+    document.documentElement.setAttribute('data-density', settings.displayDensity);
+  }, [settings]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('user_info', JSON.stringify(user));
+      fetchItems();
+    } else {
+      localStorage.removeItem('user_info');
+      setItems([]);
+    }
+  }, [user]);
+
+  const apiFetch = async (url: string, options: any = {}) => {
+    const headers = {
+      ...options.headers,
+      'Content-Type': 'application/json',
+      'x-user-id': user?.id || '',
+    };
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401) {
+      setUser(null);
+      throw new Error('Unauthorized');
+    }
+    return response;
+  };
+
+  const updateSettings = (updates: Partial<AppSettings>) => {
+    setSettings(prev => ({ ...prev, ...updates }));
+  };
+
   const saveApiKey = (key: string) => {
     const cleanKey = key.trim().replace(/[\x00-\x1F\x7F-\x9F\s]/g, '');
     setApiKey(cleanKey);
@@ -97,9 +180,11 @@ function App() {
   };
 
   const fetchItems = async () => {
+    if (!user) return;
+    setLoading(true);
     try {
-      const response = await fetch('/api/food-items');
-      if (!response.ok) throw new Error('Database connection failed');
+      const response = await apiFetch('/api/food-items');
+      if (!response.ok) throw new Error('Failed to fetch');
       const data = await response.json();
       setItems(data);
     } catch (error) {
@@ -109,17 +194,12 @@ function App() {
     }
   };
 
-  useEffect(() => {
-    fetchItems();
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) return;
     try {
-      const response = await fetch('/api/food-items', {
+      const response = await apiFetch('/api/food-items', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
       if (response.ok) {
@@ -133,9 +213,8 @@ function App() {
 
   const updateItem = async (id: string, data: Partial<FoodItem>) => {
     try {
-      const response = await fetch(`/api/food-items/${id}`, {
+      const response = await apiFetch(`/api/food-items/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       if (response.ok) {
@@ -150,7 +229,7 @@ function App() {
   const deleteItem = async (id: string) => {
     if (!confirm('この項目を削除しますか？')) return;
     try {
-      await fetch(`/api/food-items/${id}`, { method: 'DELETE' });
+      await apiFetch(`/api/food-items/${id}`, { method: 'DELETE' });
       fetchItems();
     } catch (error) {
       console.error('Failed to delete item:', error);
@@ -160,10 +239,40 @@ function App() {
   const clearConsumed = async () => {
     if (!confirm('消費済みの項目をすべて削除しますか？')) return;
     try {
-      await fetch('/api/food-items/clear/consumed', { method: 'DELETE' });
+      await apiFetch('/api/food-items/clear/consumed', { method: 'DELETE' });
       fetchItems();
     } catch (error) {
       console.error('Failed to clear consumed items:', error);
+    }
+  };
+
+  const handleLogout = () => {
+    if (confirm('ログアウトしますか？')) {
+      setUser(null);
+      setShowSettings(false);
+    }
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const target = e.currentTarget;
+    const username = (target.elements.namedItem('username') as HTMLInputElement).value;
+    const password = (target.elements.namedItem('password') as HTMLInputElement).value;
+
+    try {
+      const response = await apiFetch('/api/users/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ username, password: password || undefined }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setUser(data);
+        alert('ユーザー情報を更新しました。');
+      } else {
+        alert(data.error || '更新に失敗しました。');
+      }
+    } catch (error) {
+      alert('エラーが発生しました。');
     }
   };
 
@@ -193,6 +302,7 @@ function App() {
 
   const filteredAndSortedItems = useMemo(() => {
     const base = items.filter((item) => {
+      if (settings.hideConsumed && item.isConsumed) return false;
       const matchesCategory = filterCategory === 'すべて' || item.category === filterCategory;
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesSearch;
@@ -213,7 +323,7 @@ function App() {
       }
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [items, filterCategory, searchQuery, sortBy, sortOrder]);
+  }, [items, filterCategory, searchQuery, sortBy, sortOrder, settings.hideConsumed]);
 
   const getStatus = (dateStr: string) => {
     const today = new Date();
@@ -222,7 +332,7 @@ function App() {
     expDate.setHours(0, 0, 0, 0);
     const diff = Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     if (diff < 0) return { label: '期限切れ', class: 'expired' };
-    if (diff <= 3) return { label: `あと ${diff} 日`, class: 'soon' };
+    if (diff <= settings.notificationDays) return { label: `あと ${diff} 日`, class: 'soon' };
     return { label: `あと ${diff} 日`, class: 'safe' };
   };
 
@@ -238,92 +348,290 @@ function App() {
     }
   };
 
-  const fetchRecipes = async () => {
+  const handleSendMessage = async (text?: string) => {
+    const input = text || chatInput;
+    if (!input && messages.length > 0) return;
+    
     setAiLoading(true);
-    setRecipeSuggestion('AIがレシピを考えています...');
-    const inventory = items.filter(i => !i.isConsumed).map(i => i.name).join(', ');
-    const promptText = `あなたは親切な料理アドバイザーです。現在の在庫: ${inventory}。これを使って簡単なレシピを1つ提案してください。日本語で回答してください。`;
-
-    const tryFetch = async (url: string, options: any) => {
-      const res = await fetch(url, options);
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) return { success: true, text: data.candidates?.[0]?.content?.parts?.[0]?.text || data.suggestion };
-      return { 
-        success: false, 
-        status: res.status, 
-        message: data.error?.message || data.details || res.statusText 
-      };
-    };
-
-    if (apiKey && apiKey.length > 20) {
-      const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-      const result = await tryFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
+    let currentMessages = [...messages];
+    
+    // 1. Prepare initial hidden prompt if history is empty
+    if (currentMessages.length === 0) {
+      const inventory = items.filter(i => !i.isConsumed).map(i => i.name).join(', ');
+      currentMessages.push({
+        role: 'user',
+        parts: [{ text: `あなたは親切な料理アドバイザーです。現在の在庫は【${inventory}】です。これらを使って簡単なレシピを1つ提案してください。静かで落ち着いたトーンで、日本語で回答してください。` }]
       });
-      if (result.success) {
-        setRecipeSuggestion(result.text);
-        setAiLoading(false);
-        return;
-      } else if (result.status !== 400) {
-        setRecipeSuggestion(`【AIエラー】${result.status}: ${result.message}\n(ブラウザから直接リクエスト中に発生)`);
-        setAiLoading(false);
-        return;
-      }
+    } else if (input) {
+      // 2. Add user follow-up message
+      currentMessages.push({
+        role: 'user',
+        parts: [{ text: input }]
+      });
+      setChatInput('');
     }
 
-    const result = await tryFetch('/api/recipes', { 
-      headers: { 'x-api-key': apiKey } 
-    });
-    if (result.success) {
-      setRecipeSuggestion(result.text);
-    } else {
-      setRecipeSuggestion(`【AIエラー】${result.status}: ${result.message}\nAPIキーが正しく設定されているか確認してください。`);
+    // Update UI state with user's part immediately
+    setMessages([...currentMessages]);
+
+    try {
+      const response = await apiFetch('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({ messages: currentMessages }),
+        headers: { 'x-api-key': apiKey }
+      });
+      
+      const data = await response.json();
+      if (response.ok) {
+        setMessages(prev => [...prev, { role: 'model', parts: [{ text: data.response }] }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'model', parts: [{ text: `【AIエラー】${data.error || '不明なエラー'}` }] }]);
+      }
+    } catch (error) {
+      setMessages(prev => [...prev, { role: 'model', parts: [{ text: '【AIエラー】サーバーとの通信に失敗しました。' }] }]);
+    } finally {
+      setAiLoading(false);
     }
-    setAiLoading(false);
   };
+
+  if (!user) {
+    return <AuthView onLogin={setUser} />;
+  }
 
   return (
     <div className="container">
       <header>
         <div className="header-top">
-          <div className="header-spacer"></div>
-          <h1>ストックル</h1>
+          <div className="user-badge" onClick={() => setShowAccountModal(true)} style={{ cursor: 'pointer' }}>
+            <span className="user-icon">👤</span> {user.username}
+          </div>
           <div className="header-actions">
             <button className="icon-btn" title="ガイド" onClick={() => setShowGuide(!showGuide)}>❓</button>
             <button className="icon-btn" title="設定" onClick={() => setShowSettings(!showSettings)}>⚙️</button>
           </div>
         </div>
+        <h1>ストックル</h1>
         <p className="subtitle">貯める、回す、使う</p>
       </header>
 
       {showGuide && (
-        <div className="guide-panel card">
-          <h3>ストックルの使い方</h3>
-          <ul>
-            <li><strong>追加:</strong> 上のフォームから食材を登録。</li>
-            <li><strong>並べ替え:</strong> カードを自由にドラッグして自分好みの順序に。</li>
-            <li><strong>管理:</strong> 期限が近いものはオレンジや赤で表示されます。</li>
-            <li><strong>AI:</strong> APIキーを設定すると、在庫からレシピを提案します。</li>
-          </ul>
-          <button onClick={() => setShowGuide(false)} className="close-btn">閉じる</button>
+        <div className="modal-overlay" onClick={() => setShowGuide(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="guide-header">
+              <h3><span>📖</span>ストックルの使い方</h3>
+              <button onClick={() => setShowGuide(false)} className="close-icon-btn">✕</button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="guide-steps">
+                <div className="guide-step">
+                  <div className="step-number">✨</div>
+                  <div className="step-text">
+                    <h4>在庫を追加する</h4>
+                    <p>上のフォームから品名と期限を入力して追加。カテゴリを選ぶとアイコンが自動で設定されます。</p>
+                  </div>
+                </div>
+                <div className="guide-step">
+                  <div className="step-number">⏰</div>
+                  <div className="step-text">
+                    <h4>期限を賢く管理</h4>
+                    <p>期限が近いものはオレンジ、切れたものは赤。毎日チェックしてフードロスをゼロに！</p>
+                  </div>
+                </div>
+                <div className="guide-step">
+                  <div className="step-number">🔃</div>
+                  <div className="step-text">
+                    <h4>自由に並び替え</h4>
+                    <p>カードを長押ししてドラッグ！自分だけの使いやすい順番にいつでも整理できます。</p>
+                  </div>
+                </div>
+                <div className="guide-step">
+                  <div className="step-number">🤖</div>
+                  <div className="step-text">
+                    <h4>AIに相談する</h4>
+                    <p>
+                      「AIレシピ提案」タブでは、今の在庫から作れるメニューをAIが提案してくれます。<br />
+                      <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', fontWeight: 800 }}>
+                        Gemini APIキーを取得 ↗
+                      </a>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="guide-tip">
+                <span className="guide-tip-icon">💡</span>
+                <div>
+                  <h5>プロのヒント</h5>
+                  <p>設定から「消費済をリストから隠す」をオンにすると、今あるものだけに集中できますよ。</p>
+                </div>
+              </div>
+
+              <button onClick={() => setShowGuide(false)} className="add-btn" style={{ width: '100%', marginTop: '2.5rem' }}>はじめる！</button>
+            </div>
+          </div>
         </div>
       )}
 
       {showSettings && (
-        <div className="settings-panel card">
-          <h3>設定</h3>
-          <div className="field">
-            <label>Gemini API Key</label>
-            <input 
-              type="password" 
-              placeholder="ここにキーを入力（AIza...）" 
-              value={apiKey}
-              onChange={(e) => saveApiKey(e.target.value)}
-            />
+        <div className="modal-overlay" onClick={() => setShowSettings(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="settings-header">
+              <h3><span>⚙️</span>アプリ設定</h3>
+              <button onClick={() => setShowSettings(false)} className="close-icon-btn">✕</button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="settings-groups">
+                <div className="settings-group">
+                  <span className="settings-group-title"><span>🎨</span>見た目と表示</span>
+                  <div className="field-row">
+                    <div className="field-label-desc">
+                      <span>テーマカラー</span>
+                      <span>全体のメインカラー</span>
+                    </div>
+                    <div className="theme-options">
+                      {(['green', 'orange', 'blue', 'berry'] as const).map(color => (
+                        <button 
+                          key={color} 
+                          className={`theme-btn ${color} ${settings.themeColor === color ? 'active' : ''}`}
+                          onClick={() => updateSettings({ themeColor: color })}
+                          title={color}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="field-row">
+                    <div className="field-label-desc">
+                      <span>表示密度</span>
+                      <span>カードの大きさを調整</span>
+                    </div>
+                    <div className="toggle-group">
+                      <button 
+                        className={settings.displayDensity === 'comfortable' ? 'active' : ''}
+                        onClick={() => updateSettings({ displayDensity: 'comfortable' })}
+                      >
+                        ゆったり
+                      </button>
+                      <button 
+                        className={settings.displayDensity === 'compact' ? 'active' : ''}
+                        onClick={() => updateSettings({ displayDensity: 'compact' })}
+                      >
+                        コンパクト
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="field-row">
+                    <div className="field-label-desc">
+                      <span>消費済を非表示</span>
+                      <span>在庫リストをスッキリさせる</span>
+                    </div>
+                    <label className="switch">
+                      <input 
+                        type="checkbox" 
+                        checked={settings.hideConsumed}
+                        onChange={(e) => updateSettings({ hideConsumed: e.target.checked })}
+                      />
+                      <span className="slider round"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="settings-group">
+                  <span className="settings-group-title"><span>🔔</span>通知と期限</span>
+                  <div className="field-row">
+                    <div className="field-label-desc">
+                      <span>警告のタイミング</span>
+                      <span>何日前に期限マークを出すか</span>
+                    </div>
+                    <div className="input-with-unit">
+                      <input 
+                        type="number" 
+                        min="1" max="30"
+                        value={settings.notificationDays}
+                        onChange={(e) => updateSettings({ notificationDays: parseInt(e.target.value) || 1 })}
+                      />
+                      <span style={{ fontSize: '0.8rem', fontWeight: 800 }}>日前</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="settings-group">
+                  <span className="settings-group-title"><span>🤖</span>AI連携</span>
+                  <div className="field">
+                    <label style={{ fontSize: '0.85rem', fontWeight: '800', marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', color: 'var(--text-primary)' }}>
+                      Gemini API Key
+                      <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', fontSize: '0.75rem' }}>
+                        キーを取得 ↗
+                      </a>
+                    </label>
+                    <div className="api-key-group">
+                      <input 
+                        type="password" 
+                        placeholder="AIza..." 
+                        value={apiKey}
+                        onChange={(e) => saveApiKey(e.target.value)}
+                      />
+                      <button 
+                        className="clear-all-btn" 
+                        onClick={() => saveApiKey('')}
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
-          <button className="clear-key-btn" onClick={() => saveApiKey('')}>キーを削除</button>
+        </div>
+      )}
+
+      {showAccountModal && (
+        <div className="modal-overlay" onClick={() => setShowAccountModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="settings-header">
+              <h3><span>👤</span>アカウント設定</h3>
+              <button onClick={() => setShowAccountModal(false)} className="close-icon-btn">✕</button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="settings-groups">
+                <div className="settings-group">
+                  <span className="settings-group-title"><span>🪪</span>現在のユーザー</span>
+                  <div style={{ padding: '1rem', background: 'white', borderRadius: '12px', textAlign: 'center', marginBottom: '1rem' }}>
+                    <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>👤</div>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800 }}>{user.username}</div>
+                  </div>
+                </div>
+
+                <div className="settings-group">
+                  <span className="settings-group-title"><span>📝</span>プロフィールの更新</span>
+                  <form onSubmit={handleUpdateProfile} className="profile-form">
+                    <input type="text" name="username" defaultValue={user.username} placeholder="新しいユーザー名" required />
+                    <input type="password" name="password" placeholder="新しいパスワード（空欄で維持）" />
+                    <button type="submit" className="save-profile-btn" style={{ marginTop: '0.5rem' }}>変更を保存</button>
+                  </form>
+                </div>
+
+                <div className="settings-group" style={{ background: '#fff1f2', border: '1px solid #fecdd3' }}>
+                  <span className="settings-group-title" style={{ color: '#e11d48' }}><span>🚪</span>アカウントの切り替え</span>
+                  <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>
+                    別のアカウントでログインする場合や、ログアウトする場合はこちら。
+                  </p>
+                  <button 
+                    className="logout-btn" 
+                    onClick={() => { setShowAccountModal(false); handleLogout(); }}
+                  >
+                    ログアウトして切り替え
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -350,7 +658,7 @@ function App() {
               onChange={(e) => setFormData({ ...formData, category: e.target.value })}
             >
               {CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
+                <option key={cat} value={cat}>{CATEGORY_ICONS[cat]} {cat}</option>
               ))}
             </select>
             <input
@@ -392,7 +700,7 @@ function App() {
               />
               <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="filter-select">
                 <option value="すべて">すべてのカテゴリ</option>
-                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                {CATEGORIES.map(cat => <option key={cat} value={cat}>{CATEGORY_ICONS[cat]} {cat}</option>)}
               </select>
             </div>
             <div className="sort-controls">
@@ -400,7 +708,7 @@ function App() {
                 className={`sort-btn ${sortBy === 'expirationDate' ? 'active' : ''}`}
                 onClick={() => { setSortBy('expirationDate'); setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); }}
               >
-                期限順
+                期限順 {sortBy === 'expirationDate' && (sortOrder === 'asc' ? '↑' : '↓')}
               </button>
               <button 
                 className={`sort-btn ${sortBy === 'manual' ? 'active' : ''}`}
@@ -408,7 +716,7 @@ function App() {
               >
                 ドラッグ
               </button>
-              <button className="clear-all-btn" onClick={clearConsumed}>消費済を一掃</button>
+              {!settings.hideConsumed && <button className="clear-all-btn" onClick={clearConsumed}>消費済みを削除</button>}
             </div>
           </div>
 
@@ -419,7 +727,7 @@ function App() {
           {loading ? <p className="loading">読み込み中...</p> : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={filteredAndSortedItems.map(i => i.id)} strategy={rectSortingStrategy}>
-                <div className="items-grid">
+                <div className={`items-grid density-${settings.displayDensity}`}>
                   {filteredAndSortedItems.map((item) => {
                     const status = getStatus(item.expirationDate);
                     const isEditing = editingId === item.id;
@@ -447,7 +755,12 @@ function App() {
                             <>
                               <div className="item-main">
                                 <div className="item-info">
-                                  <span className={`category-tag category-${item.category}`}>{item.category}</span>
+                                  <div className="item-header-row">
+                                    <span className={`category-tag category-${item.category}`}>
+                                      {CATEGORY_ICONS[item.category]} {item.category}
+                                    </span>
+                                    {!item.isConsumed && <span className={`status-label ${status.class}`}>{status.label}</span>}
+                                  </div>
                                   <h3>{item.name}</h3>
                                   <div className="qty-control">
                                     <span className="quantity-display">数量: {item.quantity || '-'}</span>
@@ -460,13 +773,12 @@ function App() {
                                   </div>
                                 </div>
                                 <div className="item-status">
-                                  <span className={`status-label ${status.class}`}>{item.isConsumed ? '消費済' : status.label}</span>
-                                  <span className="date-label">{new Date(item.expirationDate).toLocaleDateString()}</span>
+                                  <span className="date-label">{new Date(item.expirationDate).toLocaleDateString()} まで</span>
                                 </div>
                               </div>
                               <div className="item-actions">
                                 <button onClick={(e) => { e.stopPropagation(); updateItem(item.id, { isConsumed: !item.isConsumed }); }} className="check-btn">
-                                  {item.isConsumed ? '取り消し' : '消費'}
+                                  {item.isConsumed ? '↩ 戻す' : '✓ 消費'}
                                 </button>
                                 <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="edit-btn">編集</button>
                                 <button onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }} className="delete-btn">削除</button>
@@ -484,19 +796,155 @@ function App() {
         </section>
       ) : (
         <section className="ai-section">
-          <div className="card ai-card maintenance">
+          <div className="card ai-card">
             <div className="ai-header">
-              <span className="maintenance-icon">⚠️</span>
-              <h3>AI機能 一時停止のお知らせ</h3>
+              <span className="ai-icon">🤖</span>
+              <h3>AIキッチン・チャット</h3>
               <p className="ai-intro">
-                現在、システム不具合によりAIレシピ提案機能がご利用いただけません。<br />
-                復旧まで今しばらくお待ちください。
+                在庫にある食材を使って、AIと対話しながらメニューを決められます。
               </p>
             </div>
-            <div className="ai-status-badge">メンテナンス中</div>
+            
+            <div className="chat-window">
+              {messages.length === 0 ? (
+                <div className="chat-empty">
+                  <p>「レシピを提案してもらう」ボタンを押して、料理のアイデアを聞いてみましょう。</p>
+                  <button 
+                    className="ai-gen-btn" 
+                    onClick={() => handleSendMessage()} 
+                    disabled={aiLoading}
+                  >
+                    {aiLoading ? '考え中...' : 'レシピを提案してもらう'}
+                  </button>
+                </div>
+              ) : (
+                <div className="messages-list">
+                  {messages.slice(1).map((msg, i) => (
+                    <div key={i} className={`chat-bubble ${msg.role === 'user' ? 'user' : 'ai'}`}>
+                      <div className="bubble-content markdown-body">
+                        <ReactMarkdown>{msg.parts[0].text}</ReactMarkdown>
+                      </div>
+                    </div>
+                  ))}
+                  {aiLoading && (
+                    <div className="chat-bubble ai loading">
+                      <div className="typing-indicator">
+                        <span></span><span></span><span></span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {messages.length > 0 && (
+              <form className="chat-input-area" onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}>
+                <input 
+                  type="text" 
+                  placeholder="「もっと辛くして」「魚料理がいい」など..." 
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  disabled={aiLoading}
+                />
+                <button type="submit" disabled={aiLoading || !chatInput.trim()}>送信</button>
+                <button type="button" className="reset-chat-btn" onClick={() => setMessages([])}>クリア</button>
+              </form>
+            )}
+            
+            {!apiKey && (
+              <p className="api-hint">
+                ※ 設定画面からGemini APIキーを登録すると利用できます。
+                <br />
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', fontWeight: 800 }}>
+                  Gemini APIキーを取得 ↗
+                </a>
+              </p>
+            )}
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+function AuthView({ onLogin }: { onLogin: (user: User) => void }) {
+  const [isLogin, setIsLogin] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const endpoint = isLogin ? '/api/login' : '/api/signup';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        onLogin(data);
+      } else {
+        setError(data.error || 'エラーが発生しました。');
+      }
+    } catch (err) {
+      setError('サーバーとの通信に失敗しました。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="auth-container">
+      <div className="auth-card card">
+        <header>
+          <h1>ストックル</h1>
+          <p className="subtitle">貯める、回す、使う</p>
+        </header>
+
+        <h2>{isLogin ? 'ログイン' : '新規登録'}</h2>
+        
+        <form onSubmit={handleSubmit}>
+          <div className="field">
+            <label>ユーザー名</label>
+            <input 
+              type="text" 
+              value={username} 
+              onChange={e => setUsername(e.target.value)} 
+              required 
+              placeholder="ユーザー名を入力"
+            />
+          </div>
+          <div className="field">
+            <label>パスワード</label>
+            <input 
+              type="password" 
+              value={password} 
+              onChange={e => setPassword(e.target.value)} 
+              required 
+              placeholder="パスワードを入力"
+            />
+          </div>
+          
+          {error && <p className="auth-error">{error}</p>}
+          
+          <button type="submit" className="add-btn auth-submit" disabled={loading}>
+            {loading ? '処理中...' : (isLogin ? 'ログイン' : '登録する')}
+          </button>
+        </form>
+
+        <div className="auth-footer">
+          <button onClick={() => { setIsLogin(!isLogin); setError(''); }} className="toggle-auth-btn">
+            {isLogin ? '新しくアカウントを作る' : 'ログイン画面に戻る'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

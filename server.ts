@@ -4,6 +4,7 @@ import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
+import { createAIService } from './src/lib/ai.js';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -15,8 +16,67 @@ const port = 3001;
 app.use(cors());
 app.use(express.json());
 
-// AI Recipe Suggestion
+// Auth Routes
+app.post('/api/signup', async (req, res) => {
+  const { username, password } = req.body;
+  console.log('Signup request received:', { username });
+  try {
+    const user = await prisma.user.create({
+      data: { username, password },
+    });
+    console.log('User created successfully:', user.id);
+    res.status(201).json({ id: user.id, username: user.username });
+  } catch (error: any) {
+    console.error('Signup Error details:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'このユーザー名は既に使用されています。' });
+    }
+    res.status(500).json({ error: 'サーバー内部エラーが発生しました。', details: error.message });
+  }
+});
+
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { username },
+    });
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: 'ユーザー名またはパスワードが正しくありません。' });
+    }
+    res.json({ id: user.id, username: user.username });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/users/me', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { username, password } = req.body;
+  try {
+    const data: any = {};
+    if (username) data.username = username;
+    if (password) data.password = password;
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data,
+    });
+    res.json({ id: user.id, username: user.username });
+  } catch (error: any) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'このユーザー名は既に使用されています。' });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/recipes', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   const clientKey = req.headers['x-api-key'] as string;
   const apiKey = (clientKey || process.env.GEMINI_API_KEY || '').trim();
 
@@ -25,70 +85,92 @@ app.get('/api/recipes', async (req, res) => {
   }
 
   try {
-    const items = await prisma.foodItem.findMany({ where: { isConsumed: false } });
+    const items = await prisma.foodItem.findMany({ 
+      where: { userId, isConsumed: false } 
+    });
     if (items.length === 0) return res.json({ suggestion: '在庫がありません。' });
 
-    const inventoryList = items.map(i => `${i.name}(${i.category})`).join(', ');
-    const prompt = `あなたは親切な料理アドバイザーです。現在の在庫: ${inventoryList}。これを使って簡単なレシピを提案してください。日本語で回答してください。`;
-
-    console.log(`Backend attempting AI with Gemini 1.5 Flash via REST API (v1)`);
-    
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      })
-    });
-
-    const data: any = await response.json();
-    if (response.ok) {
-      const suggestion = data.candidates?.[0]?.content?.parts?.[0]?.text || 'レシピを生成できませんでした。';
-      return res.json({ suggestion });
-    } else {
-      console.error(`Gemini API Error (Status ${response.status}):`, JSON.stringify(data));
-      return res.status(response.status).json(data.error || { message: '不明なエラーが発生しました。' });
-    }
+    const ai = createAIService(apiKey);
+    const suggestion = await ai.generateRecipe(items.map(i => i.name));
+    res.json({ suggestion });
   } catch (error: any) {
-    console.error('Backend AI Error:', error);
-    res.status(500).json({ error: 'AI連携エラー', details: error.message });
+    console.error('Server Error at /api/recipes:', error);
+    res.status(500).json({ 
+      error: 'AI連携中にサーバーエラーが発生しました', 
+      details: error.message 
+    });
+  }
+});
+
+app.post('/api/chat', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const clientKey = req.headers['x-api-key'] as string;
+  const apiKey = (clientKey || process.env.GEMINI_API_KEY || '').trim();
+  const { messages } = req.body;
+
+  if (!apiKey) return res.status(400).json({ error: 'APIキーが必要です。' });
+
+  try {
+    const ai = createAIService(apiKey);
+    const response = await ai.chat(messages);
+    res.json({ response });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
 app.get('/api/food-items', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   try {
-    const items = await prisma.foodItem.findMany({ orderBy: { expirationDate: 'asc' } });
+    const items = await prisma.foodItem.findMany({ 
+      where: { userId },
+      orderBy: { expirationDate: 'asc' } 
+    });
     res.json(items);
   } catch (error: any) {
-    console.error('DB Fetch Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.post('/api/food-items', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   const { name, expirationDate, category, quantity } = req.body;
   if (!name || !expirationDate) return res.status(400).json({ error: '品名と期限は必須です。' });
   
   try {
     const date = new Date(expirationDate);
-    if (isNaN(date.getTime())) throw new Error('不正な日付形式です。');
-
     const item = await prisma.foodItem.create({
-      data: { name, expirationDate: date, category: category || 'その他', quantity },
+      data: { 
+        name, 
+        expirationDate: date, 
+        category: category || 'その他', 
+        quantity,
+        userId
+      },
     });
     res.status(201).json(item);
   } catch (error: any) {
-    console.error('DB Create Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.patch('/api/food-items/:id', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   const { id } = req.params;
   const { isConsumed, name, expirationDate, category, quantity } = req.body;
   try {
+    // 自分のアイテムか確認
+    const existing = await prisma.foodItem.findUnique({ where: { id } });
+    if (!existing || existing.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
+
     const data: any = {};
     if (isConsumed !== undefined) data.isConsumed = isConsumed;
     if (name !== undefined) data.name = name;
@@ -99,14 +181,19 @@ app.patch('/api/food-items/:id', async (req, res) => {
     const item = await prisma.foodItem.update({ where: { id }, data });
     res.json(item);
   } catch (error: any) {
-    console.error('Update Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.delete('/api/food-items/:id', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   const { id } = req.params;
   try {
+    const existing = await prisma.foodItem.findUnique({ where: { id } });
+    if (!existing || existing.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
+
     await prisma.foodItem.delete({ where: { id } });
     res.status(204).send();
   } catch (error: any) {
@@ -115,8 +202,13 @@ app.delete('/api/food-items/:id', async (req, res) => {
 });
 
 app.delete('/api/food-items/clear/consumed', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   try {
-    await prisma.foodItem.deleteMany({ where: { isConsumed: true } });
+    await prisma.foodItem.deleteMany({ 
+      where: { userId, isConsumed: true } 
+    });
     res.status(204).send();
   } catch (error: any) {
     res.status(500).json({ error: error.message });

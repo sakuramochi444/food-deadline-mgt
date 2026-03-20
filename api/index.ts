@@ -4,6 +4,7 @@ import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
+import { createAIService } from '../src/lib/ai.js';
 
 let prisma: PrismaClient;
 
@@ -22,50 +23,116 @@ app.use(express.json());
 
 const router = express.Router();
 
+// Auth Routes
+router.post('/signup', async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const db = getPrisma();
+    const user = await db.user.create({
+      data: { username, password },
+    });
+    res.status(201).json({ id: user.id, username: user.username });
+  } catch (error: any) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'このユーザー名は既に使用されています。' });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const db = getPrisma();
+    const user = await db.user.findUnique({
+      where: { username },
+    });
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: 'ユーザー名またはパスワードが正しくありません。' });
+    }
+    res.json({ id: user.id, username: user.username });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.patch('/users/me', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { username, password } = req.body;
+  try {
+    const db = getPrisma();
+    const data: any = {};
+    if (username) data.username = username;
+    if (password) data.password = password;
+
+    const user = await db.user.update({
+      where: { id: userId },
+      data,
+    });
+    res.json({ id: user.id, username: user.username });
+  } catch (error: any) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'このユーザー名は既に使用されています。' });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/recipes', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   const rawKey = (req.headers['x-api-key'] as string) || process.env.GEMINI_API_KEY;
-  if (!rawKey) return res.status(400).json({ error: 'No API Key' });
+  if (!rawKey) return res.status(400).json({ error: 'APIキーが設定されていません。' });
   const apiKey = rawKey.trim();
 
   try {
     const db = getPrisma();
-    const items = await db.foodItem.findMany({ where: { isConsumed: false } });
-    const inventory = items.map(i => i.name).join(', ');
-    
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    const prompt = `在庫（${inventory}）を使ったレシピを1つ提案してください。日本語で。`;
-
-    const googleRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      })
+    const items = await db.foodItem.findMany({ 
+      where: { userId, isConsumed: false } 
     });
+    
+    if (items.length === 0) return res.json({ suggestion: '在庫がありません。' });
 
-    const data: any = await googleRes.json();
-    if (googleRes.ok) {
-      const suggestion = data.candidates?.[0]?.content?.parts?.[0]?.text || 'レシピを生成できませんでした。';
-      res.json({ suggestion });
-    } else {
-      console.error(`Gemini API Error (Status ${googleRes.status}):`, JSON.stringify(data));
-      res.status(googleRes.status).json({
-        error: 'Gemini API Error',
-        details: data.error?.message || '不明なエラーが発生しました。',
-        code: googleRes.status
-      });
-    }
+    const ai = createAIService(apiKey);
+    const suggestion = await ai.generateRecipe(items.map(i => i.name));
+    res.json({ suggestion });
   } catch (error: any) {
-    console.error('Internal Server Error in /recipes:', error);
     res.status(500).json({ error: 'Internal Server Error', details: error.message });
   }
 });
 
-// ... 他のルート（food-itemsなど）
+router.post('/chat', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const rawKey = (req.headers['x-api-key'] as string) || process.env.GEMINI_API_KEY;
+  const { messages } = req.body;
+
+  if (!rawKey) return res.status(400).json({ error: 'APIキーが必要です。' });
+  const apiKey = rawKey.trim();
+
+  try {
+    const ai = createAIService(apiKey);
+    const response = await ai.chat(messages);
+    res.json({ response });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/food-items', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   try {
     const db = getPrisma();
-    const items = await db.foodItem.findMany({ orderBy: { expirationDate: 'asc' } });
+    const items = await db.foodItem.findMany({ 
+      where: { userId },
+      orderBy: { expirationDate: 'asc' } 
+    });
     res.json(items);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -73,11 +140,20 @@ router.get('/food-items', async (req, res) => {
 });
 
 router.post('/food-items', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   const { name, expirationDate, category, quantity } = req.body;
   try {
     const db = getPrisma();
     const item = await db.foodItem.create({
-      data: { name, expirationDate: new Date(expirationDate), category: category || 'その他', quantity },
+      data: { 
+        name, 
+        expirationDate: new Date(expirationDate), 
+        category: category || 'その他', 
+        quantity,
+        userId
+      },
     });
     res.status(201).json(item);
   } catch (error: any) {
@@ -86,10 +162,17 @@ router.post('/food-items', async (req, res) => {
 });
 
 router.patch('/food-items/:id', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   const { id } = req.params;
   const { isConsumed, name, expirationDate, category, quantity } = req.body;
   try {
     const db = getPrisma();
+    // 自分のアイテムか確認
+    const existing = await db.foodItem.findUnique({ where: { id } });
+    if (!existing || existing.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
+
     const data: any = {};
     if (isConsumed !== undefined) data.isConsumed = isConsumed;
     if (name !== undefined) data.name = name;
@@ -105,9 +188,15 @@ router.patch('/food-items/:id', async (req, res) => {
 });
 
 router.delete('/food-items/:id', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   const { id } = req.params;
   try {
     const db = getPrisma();
+    const existing = await db.foodItem.findUnique({ where: { id } });
+    if (!existing || existing.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
+
     await db.foodItem.delete({ where: { id } });
     res.status(204).send();
   } catch (error: any) {
@@ -116,9 +205,14 @@ router.delete('/food-items/:id', async (req, res) => {
 });
 
 router.delete('/food-items/clear/consumed', async (req, res) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   try {
     const db = getPrisma();
-    await db.foodItem.deleteMany({ where: { isConsumed: true } });
+    await db.foodItem.deleteMany({ 
+      where: { userId, isConsumed: true } 
+    });
     res.status(204).send();
   } catch (error: any) {
     res.status(500).json({ error: error.message });

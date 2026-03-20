@@ -43,9 +43,31 @@ export class AIService {
   /**
    * Generates a recipe based on the provided inventory.
    */
-  async generateRecipe(inventory: string[]): Promise<string> {
-    const inventoryList = inventory.join(', ');
-    const initialPrompt = `あなたは親切な料理アドバイザーです。現在の在庫は【${inventoryList}】です。これらを使って簡単なレシピを1つ提案してください。静かで落ち着いたトーンで、日本語で回答してください。`;
+  async generateRecipe(inventory: { name: string, expirationDate: Date }[]): Promise<string> {
+    const now = new Date();
+    
+    // 期限切れを除外
+    const validItems = inventory.filter(item => new Date(item.expirationDate) >= now);
+    
+    if (validItems.length === 0) {
+      return '利用可能な期限内の食材がありません。新しい食材を追加してください。';
+    }
+
+    // 期限が近い順にソート
+    const sortedItems = [...validItems].sort((a, b) => 
+      new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime()
+    );
+
+    const inventoryList = sortedItems.map(item => {
+      const daysLeft = Math.ceil((new Date(item.expirationDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      return `${item.name}(あと${daysLeft}日)`;
+    }).join(', ');
+
+    const initialPrompt = `あなたは親切な料理アドバイザーです。
+現在の在庫（期限が近い順）は【${inventoryList}】です。
+期限が迫っているものを優先的に使い、簡単なレシピを1つ提案してください。
+期限切れのものは含まれていません。
+静かで落ち着いたトーンで、日本語で回答してください。`;
 
     return this.chat([{ role: 'user', parts: [{ text: initialPrompt }] }]);
   }

@@ -91,7 +91,7 @@ app.get('/api/recipes', async (req, res) => {
     if (items.length === 0) return res.json({ suggestion: '在庫がありません。' });
 
     const ai = createAIService(apiKey);
-    const suggestion = await ai.generateRecipe(items.map(i => i.name));
+    const suggestion = await ai.generateRecipe(items.map(i => ({ name: i.name, expirationDate: i.expirationDate })));
     res.json({ suggestion });
   } catch (error: any) {
     console.error('Server Error at /api/recipes:', error);

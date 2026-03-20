@@ -357,10 +357,29 @@ function App() {
     
     // 1. Prepare initial hidden prompt if history is empty
     if (currentMessages.length === 0) {
-      const inventory = items.filter(i => !i.isConsumed).map(i => i.name).join(', ');
+      const now = new Date();
+      const validItems = items
+        .filter(i => !i.isConsumed && new Date(i.expirationDate) >= now)
+        .sort((a, b) => new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime());
+
+      if (validItems.length === 0) {
+        setMessages([{ role: 'model', parts: [{ text: '利用可能な期限内の食材がありません。新しい食材を追加してください。' }] }]);
+        setAiLoading(false);
+        return;
+      }
+
+      const inventoryList = validItems.map(item => {
+        const daysLeft = Math.ceil((new Date(item.expirationDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        return `${item.name}(あと${daysLeft}日)`;
+      }).join(', ');
+
       currentMessages.push({
         role: 'user',
-        parts: [{ text: `あなたは親切な料理アドバイザーです。現在の在庫は【${inventory}】です。これらを使って簡単なレシピを1つ提案してください。静かで落ち着いたトーンで、日本語で回答してください。` }]
+        parts: [{ text: `あなたは親切な料理アドバイザーです。
+現在の在庫（期限が近い順）は【${inventoryList}】です。
+期限が迫っているものを優先的に使い、簡単なレシピを1つ提案してください。
+期限切れのものは含まれていません。
+静かで落ち着いたトーンで、日本語で回答してください。` }]
       });
     } else if (input) {
       // 2. Add user follow-up message

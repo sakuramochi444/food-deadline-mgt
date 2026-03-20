@@ -147,7 +147,7 @@ async function getAIRecipe() {
   
   try {
     const ai = createAIService(apiKey);
-    const suggestion = await ai.generateRecipe(items.map(i => i.name));
+    const suggestion = await ai.generateRecipe(items.map(i => ({ name: i.name, expirationDate: i.expirationDate })));
 
     console.log('\n--- AIのおすすめレシピ ---');
     console.log(suggestion);
